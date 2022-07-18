@@ -57,7 +57,7 @@ pos = test['FantPos'].unique()
 test.to_csv(r'E:\Fantasy\2021stats\stats_2021.csv')
 
 #adding adp_2021 to dataset
-
+# adp_2021 here isnt the exact adp but rather the round in which a player was drafted
 adp_2021 = pd.read_csv(r'E:\Fantasy\2021stats\2021Adps.txt')
 
 
