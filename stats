@@ -1,0 +1,111 @@
+"""
+Created on Fri Jul 15 11:31:25 2022
+
+@author: sebas
+messing around with data from https://www.pro-football-reference.com/years/2021/fantasy.htm
+dirty way of cleaning the data. plenty of NaNs, oddly  FBs are present in the data,
+however not actually named that way in 'Pos' 
+"""
+
+import pandas as pd
+import numpy as np
+import seaborn as sns
+
+path = r'E:\Fantasy\2021stats\nfl.csv'
+
+test = pd.read_csv(path,  header = 0).iloc[0:201, :]
+test.shape
+test.columns
+
+columns =['Player', 'Tm', 'FantPos', 'Age', 'G', 'GS', 'Cmp', 'PAtt',
+       'PYds', 'PTD', 'Int', 'RuAtt', 'RuYds', 'RuY/A', 'RuTD', 'Tgt', 'Rec',
+       'RYds', 'Y/R', 'RTD', 'Fmb', 'FL', 'TotTD', 'PPR']
+
+test = test[columns].sort_values('PPR', ascending = False)
+test['Overall_Rank'] = range(1, len(test) + 1, 1)
+
+
+pd.set_option('display.max_rows', 200)
+pd.set_option('display.max_columns', 65)
+
+test['Player'] = test['Player'].str.replace('*', '').str.replace('+', '')
+
+#following gets rid of 2 fullbacks, not relevant
+test = test[test['FantPos'].notna()]
+test.isna()
+
+#too many nas in rush yards per attempt, recalulate to make sure data matches
+# fill rest with 0s. missing data ought to be 0s, i.e no rush attempts for D.Adams
+
+test['RuY/A'] = round(test['RuYds'] / test['RuAtt'], 2)
+
+test = test.fillna(0)
+
+
+
+#following gets error message about unsupported operand types, even tho all
+# column types are  floats
+#test['touches'] = sum(test[['RuAtt', 'Rec', 'PAtt']])
+test['touches'] = test['RuAtt'] + test['Rec'] + test['PAtt']
+
+#dataset evaluation doesnt make sense on the aggregate level, 
+# better to split up by position into new datasets
+#checking that only qb, wr, te, and rb are in the data
+pos = test['FantPos'].unique()
+
+#saving file as aggregate for tableau
+test.to_csv(r'E:\Fantasy\2021stats\stats_2021.csv')
+
+#adding adp_2021 to dataset
+
+adp_2021 = pd.read_csv(r'E:\Fantasy\2021stats\2021Adps.txt')
+
+
+# probably gonna have to do math floor isntead of round
+round_drafted = (((adp_2021['Overall'] + 11) / 12)).astype(float)
+adp_2021['rounds'] = round_drafted.apply(np.floor)
+adp_2021 = adp_2021[['rounds', 'Name']].rename(columns = {'Name': 'Player', 'rounds': 'adp_2021'})
+stats_2021 = test
+
+df = pd.merge(stats_2021, adp_2021, how='left')
+df = df[['Overall_Rank','Player','adp_2021', 'Tm', 'FantPos', 'Age', 'G', 'GS', 'Cmp',
+       'PAtt', 'PYds', 'PTD', 'Int', 'RuAtt', 'RuYds', 'RuY/A', 'RuTD', 'Tgt',
+       'Rec', 'RYds', 'Y/R', 'RTD', 'Fmb', 'FL', 'TotTD', 'PPR',
+        'touches']]
+
+# filling the column with 20 to get rid of nas and have distinct selection for waiver adds
+
+df['adp_2021'] = df['adp_2021'].fillna(20)
+
+
+#creating and saving as their own csv files for easier analysis
+# theres a way to loop this, quicker for now
+
+rb_2021 = df.loc[df['FantPos'] == 'RB'].reset_index()
+qb_2021 = df.loc[df['FantPos'] == 'QB'].reset_index()
+wr_2021 = df.loc[df['FantPos'] == 'WR'].reset_index()
+te_2021 = df.loc[df['FantPos'] == 'TE'].reset_index()
+
+
+#create positional rank column for better overview
+rb_2021['Pos_Rank'] = range(1, len(rb_2021) + 1, 1)
+qb_2021['Pos_Rank'] = range(1, len(qb_2021) + 1, 1)
+wr_2021['Pos_Rank'] = range(1, len(wr_2021) + 1, 1)
+te_2021['Pos_Rank'] = range(1, len(te_2021) + 1, 1)
+
+#cutting down on relevant columns per position
+
+ru_columns = ['Overall_Rank', 'Pos_Rank','Player', 'adp_2021', 'Tm', 'Age', 'G', 'GS', 'RuAtt', 'RuYds', 'RuY/A', 'RuTD', 'Tgt',
+       'Rec', 'RYds', 'Y/R', 'RTD', 'Fmb', 'FL', 'touches','TotTD', 'PPR']
+rec_columns = ['Overall_Rank', 'Pos_Rank','Player', 'adp_2021', 'Tm', 'Age', 'G', 'GS', 'RuAtt', 'RuYds', 'RuY/A', 'RuTD', 'Tgt',
+       'Rec', 'RYds', 'Y/R', 'RTD', 'Fmb', 'FL', 'touches','TotTD', 'PPR']
+qb_columns = ['Overall_Rank', 'Pos_Rank', 'Player', 'adp_2021', 'Tm', 'FantPos', 'Age', 'G', 'GS', 'Cmp',
+       'PAtt', 'PYds', 'PTD', 'Int', 'RuAtt', 'RuYds', 'RuY/A', 'RuTD', 'Fmb', 'FL', 'touches', 'TotTD', 'PPR']
+
+
+rb_2021[ru_columns].to_csv(r'E:\Fantasy\2021stats\rb_2021.csv')
+qb_2021[qb_columns].to_csv(r'E:\Fantasy\2021stats\qb_2021.csv')
+wr_2021[rec_columns].to_csv(r'E:\Fantasy\2021stats\wr_2021.csv')
+te_2021[rec_columns].to_csv(r'E:\Fantasy\2021stats\te_2021.csv')
+
+#sns.pairplot(rb_2021[ru_columns])
