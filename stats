@@ -1,111 +1,124 @@
+# -*- coding: utf-8 -*-
 """
-Created on Fri Jul 15 11:31:25 2022
+Created on Thu Jul 28 09:30:46 2022
 
 @author: sebas
-messing around with data from https://www.pro-football-reference.com/years/2021/fantasy.htm
-dirty way of cleaning the data. plenty of NaNs, oddly  FBs are present in the data,
-however not actually named that way in 'Pos' 
+
+combining weekly game data, imported from fantasypros (by hand, bc ahref issues with names in webscraping)
+added a weeks column manually 
+define path where data is stored. mix of fstrings and +str(), could probably just do it with fstring
+
+IMPORTANT!!!!
+Recheck path locations where datasets are saved/read out of. 
+csv gets saved in 'weekly stats' but get read out of the position folders!!!!
 """
 
+import os
 import pandas as pd
-import numpy as np
-import seaborn as sns
 
-path = r'E:\Fantasy\2021stats\nfl.csv'
-
-test = pd.read_csv(path,  header = 0).iloc[0:201, :]
-test.shape
-test.columns
-
-columns =['Player', 'Tm', 'FantPos', 'Age', 'G', 'GS', 'Cmp', 'PAtt',
-       'PYds', 'PTD', 'Int', 'RuAtt', 'RuYds', 'RuY/A', 'RuTD', 'Tgt', 'Rec',
-       'RYds', 'Y/R', 'RTD', 'Fmb', 'FL', 'TotTD', 'PPR']
-
-test = test[columns].sort_values('PPR', ascending = False)
-test['Overall_Rank'] = range(1, len(test) + 1, 1)
+#change position here, make sure the right directory is set/contains the expected data
 
 
-pd.set_option('display.max_rows', 200)
-pd.set_option('display.max_columns', 65)
+pos = 'te'
 
-test['Player'] = test['Player'].str.replace('*', '').str.replace('+', '')
 
-#following gets rid of 2 fullbacks, not relevant
-test = test[test['FantPos'].notna()]
-test.isna()
+os.getcwd()
+os.chdir(f'E:\Fantasy\Weekly Stats\{pos}')
 
-#too many nas in rush yards per attempt, recalulate to make sure data matches
-# fill rest with 0s. missing data ought to be 0s, i.e no rush attempts for D.Adams
 
-test['RuY/A'] = round(test['RuYds'] / test['RuAtt'], 2)
+file_name = str(pos)+'_week{}.csv'
+df_list = []
+for i in range(1, 19):
+    df_list.append(pd.read_csv(file_name.format(i)))
+
+df = pd.concat(df_list)
+df = df.loc[df['G'] == 1]
+
+# 1 pt threshold taken out, surprisingly skews data more than expected
+#df = df.loc[df['FPTS'] > 1]
+
+df = df.dropna(axis = 0)
+df['POS'] = str(pos)
+df.to_csv('weekly_'+ str(pos)+'.csv', index = False)
+
+#--------------------------------
+
+#--reading and combining positions for total db
+
+qb = pd.read_csv('E:\Fantasy\Weekly Stats\season_by_week\weekly_qb.csv')
+rb = pd.read_csv('E:\Fantasy\Weekly Stats\season_by_week\weekly_rb.csv')
+wr = pd.read_csv('E:\Fantasy\Weekly Stats\season_by_week\weekly_wr.csv')
+te = pd.read_csv('E:\Fantasy\Weekly Stats\season_by_week\weekly_te.csv')
+
+#--rename columns to have distinct names. easier to read and implement in tableau
+
+qb = qb.rename(columns = {'YDS' : 'PYards', 'TD' : 'PTD', 'ATT.1': 'RATT', 'YDS.1': 'RYDS', 'TD.1': 'RTD'})
+rb = rb.rename(columns ={'ATT': 'RATT', 'YDS': 'RYDS', 'TD': 'RTD','Y/A' : 'RY/A' ,'YDS.1': 'RecYDS',  'TD.1': 'RecTD'})
+wr = wr.rename(columns ={'YDS': 'RecYDS','TD':'RecTD','ATT': 'RATT', 'YDS.1': 'RYDS','TD.1': 'RTD'} )
+te = te.rename(columns={'YDS': 'RecYDS','TD':'RecTD','ATT': 'RATT', 'YDS.1': 'RYDS','TD.1': 'RTD'})
+
+#-----------Add Pos Rank 2021
+# take positional tables, group by name, sort by fant. points, add rank column
+# take name and rank column, merge with original positional table on name 
+# again, repetitive, come back to clean up code into loop
+#---------
+
+qb_rank = qb[['Player', 'FPTS']].groupby(['Player'])['FPTS'].sum().sort_values(ascending = False)
+qb_rank = qb_rank.to_frame().reset_index()
+qb_rank['Rank 2021'] = range(1, len(qb_rank) + 1, 1)
+qb_rank = qb_rank.drop('FPTS', axis = 1)
+
+rb_rank = rb[['Player', 'FPTS']].groupby(['Player'])['FPTS'].sum().sort_values(ascending = False)
+rb_rank = rb_rank.to_frame().reset_index()
+rb_rank['Rank 2021'] = range(1, len(rb_rank) + 1, 1)
+rb_rank = rb_rank.drop('FPTS', axis = 1)
+
+wr_rank = wr[['Player', 'FPTS']].groupby(['Player'])['FPTS'].sum().sort_values(ascending = False)
+wr_rank = wr_rank.to_frame().reset_index()
+wr_rank['Rank 2021'] = range(1, len(wr_rank) + 1, 1)
+wr_rank = wr_rank.drop('FPTS', axis = 1)
+
+te_rank = te[['Player', 'FPTS']].groupby(['Player'])['FPTS'].sum().sort_values(ascending = False)
+te_rank = te_rank.to_frame().reset_index()
+te_rank['Rank 2021'] = range(1, len(te_rank) + 1, 1)
+te_rank = te_rank.drop('FPTS', axis = 1)
+
+qb = qb.merge(qb_rank, on = 'Player')
+rb = rb.merge(rb_rank, on = 'Player')
+wr = wr.merge(wr_rank, on = 'Player')
+te = te.merge(te_rank, on = 'Player')
+#--------------------------------------------------
+
+players = [qb, rb, wr, te]
+test = pd.concat(players, axis = 0, copy = False)
 
 test = test.fillna(0)
 
+#---making a  separate column for teams
+#- replace parantheses, split from the right, replace team column with name only
+
+names =test['Player']
+names = names.str.replace('(', '').str.replace(')', '')
+names = names.str.rsplit(' ', 1, expand = True)
+test[['Player','TEAM']] = names[[0, 1]]
+
+#--- ADDING ADP
+# Important to note, ADP will adjust the closer it gets to the draft date
+# while the season stats will remain the same!
+# hence make sure to update ADP data closer to draft date, 
+# so that the tableau file stays up to date.
+# (download adp data from fant.pros, replace file and run code below)
+
+adp = pd.read_csv(r'E:\Fantasy\Weekly Stats\season_by_week\adp_2022.csv')
+
+#checking for mismatched Names, adp data comes form the same source though.
+#name_test = test['Player'].isin(adp['PLAYER NAME'])
 
 
-#following gets error message about unsupported operand types, even tho all
-# column types are  floats
-#test['touches'] = sum(test[['RuAtt', 'Rec', 'PAtt']])
-test['touches'] = test['RuAtt'] + test['Rec'] + test['PAtt']
+adp = adp.drop(labels = 'Unnamed: 3', axis = 1).rename(columns = {'PLAYER NAME': 'Player', 'POS': 'POS_ADP'})
 
-#dataset evaluation doesnt make sense on the aggregate level, 
-# better to split up by position into new datasets
-#checking that only qb, wr, te, and rb are in the data
-pos = test['FantPos'].unique()
+test = test.merge(adp, on ='Player')
 
-#saving file as aggregate for tableau
-test.to_csv(r'E:\Fantasy\2021stats\stats_2021.csv')
-
-#adding adp_2021 to dataset
-# adp_2021 here isnt the exact adp but rather the round in which a player was drafted
-adp_2021 = pd.read_csv(r'E:\Fantasy\2021stats\2021Adps.txt')
-
-
-# probably gonna have to do math floor isntead of round
-round_drafted = (((adp_2021['Overall'] + 11) / 12)).astype(float)
-adp_2021['rounds'] = round_drafted.apply(np.floor)
-adp_2021 = adp_2021[['rounds', 'Name']].rename(columns = {'Name': 'Player', 'rounds': 'adp_2021'})
-stats_2021 = test
-
-df = pd.merge(stats_2021, adp_2021, how='left')
-df = df[['Overall_Rank','Player','adp_2021', 'Tm', 'FantPos', 'Age', 'G', 'GS', 'Cmp',
-       'PAtt', 'PYds', 'PTD', 'Int', 'RuAtt', 'RuYds', 'RuY/A', 'RuTD', 'Tgt',
-       'Rec', 'RYds', 'Y/R', 'RTD', 'Fmb', 'FL', 'TotTD', 'PPR',
-        'touches']]
-
-# filling the column with 20 to get rid of nas and have distinct selection for waiver adds
-
-df['adp_2021'] = df['adp_2021'].fillna(20)
-
-
-#creating and saving as their own csv files for easier analysis
-# theres a way to loop this, quicker for now
-
-rb_2021 = df.loc[df['FantPos'] == 'RB'].reset_index()
-qb_2021 = df.loc[df['FantPos'] == 'QB'].reset_index()
-wr_2021 = df.loc[df['FantPos'] == 'WR'].reset_index()
-te_2021 = df.loc[df['FantPos'] == 'TE'].reset_index()
-
-
-#create positional rank column for better overview
-rb_2021['Pos_Rank'] = range(1, len(rb_2021) + 1, 1)
-qb_2021['Pos_Rank'] = range(1, len(qb_2021) + 1, 1)
-wr_2021['Pos_Rank'] = range(1, len(wr_2021) + 1, 1)
-te_2021['Pos_Rank'] = range(1, len(te_2021) + 1, 1)
-
-#cutting down on relevant columns per position
-
-ru_columns = ['Overall_Rank', 'Pos_Rank','Player', 'adp_2021', 'Tm', 'Age', 'G', 'GS', 'RuAtt', 'RuYds', 'RuY/A', 'RuTD', 'Tgt',
-       'Rec', 'RYds', 'Y/R', 'RTD', 'Fmb', 'FL', 'touches','TotTD', 'PPR']
-rec_columns = ['Overall_Rank', 'Pos_Rank','Player', 'adp_2021', 'Tm', 'Age', 'G', 'GS', 'RuAtt', 'RuYds', 'RuY/A', 'RuTD', 'Tgt',
-       'Rec', 'RYds', 'Y/R', 'RTD', 'Fmb', 'FL', 'touches','TotTD', 'PPR']
-qb_columns = ['Overall_Rank', 'Pos_Rank', 'Player', 'adp_2021', 'Tm', 'FantPos', 'Age', 'G', 'GS', 'Cmp',
-       'PAtt', 'PYds', 'PTD', 'Int', 'RuAtt', 'RuYds', 'RuY/A', 'RuTD', 'Fmb', 'FL', 'touches', 'TotTD', 'PPR']
-
-
-rb_2021[ru_columns].to_csv(r'E:\Fantasy\2021stats\rb_2021.csv')
-qb_2021[qb_columns].to_csv(r'E:\Fantasy\2021stats\qb_2021.csv')
-wr_2021[rec_columns].to_csv(r'E:\Fantasy\2021stats\wr_2021.csv')
-te_2021[rec_columns].to_csv(r'E:\Fantasy\2021stats\te_2021.csv')
-
-#sns.pairplot(rb_2021[ru_columns])
+#------getting rid of position in adp_pos
+test['POS_ADP'] = test['POS_ADP'].str[2:].astype(int)
+test.to_csv('E:\Fantasy\Weekly Stats\season_by_week\season_by_week.csv', index = False)
